@@ -22,13 +22,27 @@ app.use(express.static("public"))
 
 app.use(cookieParser())
 
-// Routes Import
-import { Logs } from './models/Logs.model.js';
-
-// Routes Declaration
-app.get('/dev/seed', async (req, res) => {
-  await Logs.create({ eventId: 'seed-' + Date.now(), eventType: 'seed' });
-  res.send('seeded');
+// Health check
+app.get('/health', (req, res) => {
+  return res.status(200).json({ status: 'ok', ts: new Date().toISOString() });
 });
+
+// Routes Import
+import telemetryRoutes from "./routes/telemetry.routes.js"
+
+//Routes Declaration
+app.use('/telemetry', telemetryRoutes);
+
+// Fallback 404 for unknown API routes
+app.use((req, res, next) => {
+  res.status(404).json({ error: 'Not Found' });
+});
+
+// Basic error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal Server Error' });
+});
+
 
 export default app

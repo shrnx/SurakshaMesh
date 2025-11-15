@@ -4,7 +4,7 @@ import axios from "axios";
 
 const URL = process.env.INFERENCE_URL;
 
-async function getRiskScore(uwc) {
+export async function getRiskScore(uwc) {
   try {
     // AK expects features or UWC; adapt as needed
     const resp = await axios.post(URL, { uwc });
@@ -30,5 +30,3 @@ function fallbackRisk(uwc) {
   if (uwc.vitals && uwc.vitals.hr && uwc.vitals.hr > 130) score += 0.2;
   return Math.min(1, score);
 }
-
-module.exports = { getRiskScore };
