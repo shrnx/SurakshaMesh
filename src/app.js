@@ -29,9 +29,12 @@ app.get('/health', (req, res) => {
 
 // Routes Import
 import telemetryRoutes from "./routes/telemetry.routes.js"
+import dashboardRoutes from './routes/dashboard.routes.js';
+
 
 //Routes Declaration
 app.use('/telemetry', telemetryRoutes);
+app.use('/dashboard', dashboardRoutes);
 
 // Fallback 404 for unknown API routes
 app.use((req, res, next) => {
