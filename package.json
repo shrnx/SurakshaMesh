@@ -1,11 +1,10 @@
 {
   "name": "surakshamesh_backend",
   "version": "1.0.0",
-  "description": "CH",
+  "description": "SurakshaMesh backend",
   "main": "src/index.js",
   "scripts": {
-    "seed:workers": "node src/scripts/seed_workers_bulk.js",
-    "dev": "node src/scripts/seed_workers_bulk.js && nodemon --watch src src/index.js",
+    "dev": "node --watch src/index.js",
     "start": "node src/index.js"
   },
   "author": "Gurusharan Sahu",
@@ -28,7 +27,7 @@
     "ngrok": "^5.0.0-beta.2",
     "node-fetch": "^3.3.2",
     "uuid": "^13.0.0",
-    "ws": "^8.13.0"
+    "ws": "^8.18.3"
   },
   "overrides": {
     "semver": "7.7.3"

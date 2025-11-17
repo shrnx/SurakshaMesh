@@ -205,6 +205,9 @@ async function mergeAndScore() {
   const workerIds = Object.keys(buffers);
   if (!workerIds.length) return;
 
+  // Control whether simulated inference results are broadcast to WS clients.
+  const broadcastSimulated = (process.env.BROADCAST_SIMULATED ?? 'true').toString().toLowerCase() === 'true';
+
   for (const workerId of workerIds) {
     let built;
     try {
@@ -247,15 +250,23 @@ async function mergeAndScore() {
 
       const prev = lastRisk[workerId] ?? null;
       const shouldBroadcast = prev === null || Math.abs(prev - risk) > 0.03 || (prev < THRESHOLD && risk >= THRESHOLD);
+
       if (shouldBroadcast) {
         lastRisk[workerId] = risk;
-        broadcast({
-          type: 'uwc_update',
-          workerId,
-          risk,
-          simulated: !!simulated,
-          uwc: safeForBroadcast(uwcDoc ? (uwcDoc.toObject ? uwcDoc.toObject() : uwcDoc) : uwc)
-        });
+
+        // Decide whether to actually send simulated results based on env control.
+        if (simulated && !broadcastSimulated) {
+          console.log(`[fusion] suppressed simulated uwc_update for worker=${workerId} risk=${risk}`);
+        } else {
+          console.log(`[fusion] broadcasting uwc_update worker=${workerId} risk=${risk} simulated=${!!simulated}`);
+          broadcast({
+            type: 'uwc_update',
+            workerId,
+            risk,
+            simulated: !!simulated,
+            uwc: safeForBroadcast(uwcDoc ? (uwcDoc.toObject ? uwcDoc.toObject() : uwcDoc) : uwc)
+          });
+        }
       }
 
       // Only create incident if inference was NOT simulated
@@ -270,6 +281,8 @@ async function mergeAndScore() {
             createdAt: new Date()
           });
 
+          console.log(`[fusion] incident created worker=${workerId} incidentId=${incident._id} severity=${Number(risk)}`);
+
           try {
             const anchorResult = await anchorHash(String(incident._id));
             incident.blockchainHash = anchorResult.txHash || anchorResult.simulated || null;
@@ -278,8 +291,10 @@ async function mergeAndScore() {
 
             broadcast({ type: 'incident_created', incident: safeForBroadcast(incident.toObject ? incident.toObject() : incident) });
             broadcast({ type: 'incident_anchored', incidentId: incident._id, anchor: anchorResult });
+            console.log(`[fusion] incident anchored worker=${workerId} incidentId=${incident._id} anchorStatus=${incident.anchorStatus}`);
           } catch (anchorErr) {
             console.error('fusion: anchorHash failed for incident', incident._id, anchorErr?.stack || anchorErr);
+            // still broadcast created incident so UIs get it
             broadcast({ type: 'incident_created', incident: safeForBroadcast(incident.toObject ? incident.toObject() : incident) });
           }
         } catch (incidentErr) {
@@ -291,6 +306,7 @@ async function mergeAndScore() {
     } catch (err) {
       console.error('mergeAndScore error for worker', workerId, err?.stack || err);
     } finally {
+      // Clear buffers after processing (keeps waiting fresh)
       buffers[workerId] = { badge: [], vision: [] };
     }
   }

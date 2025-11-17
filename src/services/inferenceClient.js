@@ -7,6 +7,7 @@ const AK_RETRIES = parseInt(process.env.AK_RETRIES || '2', 10);
 const SIMULATE_ON_ERROR = (process.env.SIMULATE_AK_ON_ERROR || 'true').toLowerCase() === 'true';
 const SIMULATED_RISK = parseFloat(process.env.SIMULATED_AK_RISK ?? '0.55');
 const DEBUG_AK_LOG = (process.env.FUSION_DEBUG_AK_LOG || 'true').toLowerCase() === 'true';
+const AK_URL = process.env.AK_INFERENCE_URL
 
 function shallowClone(obj) {
   try { return JSON.parse(JSON.stringify(obj)); } catch (e) { return { ...obj }; }
@@ -122,42 +123,26 @@ function extractRiskFromBody(body) {
 
 /** Main exported function: reads AK URL at runtime and posts a compatibility payload */
 export async function getRiskScore(uwc) {
-  const AK_URL = process.env.AK_INFERENCE_URL || null; // read at call-time
-
-  if (DEBUG_AK_LOG) {
-    try { console.debug('[inferenceClient] AK_INFERENCE_URL (runtime) =', JSON.stringify(AK_URL)); } catch (e) {}
-  }
-
+  // If no AK URL, optionally simulate
   if (!AK_URL) {
     const msg = 'AK_INFERENCE_URL not configured';
     console.warn('[inferenceClient] ' + msg);
     if (SIMULATE_ON_ERROR) {
       console.warn('[inferenceClient] returning simulated risk due to missing AK_URL:', SIMULATED_RISK);
-      return { risk: SIMULATED_RISK, simulated: true, note: msg };
+      const sim = Number(SIMULATED_RISK);
+      const simNormalized = Number.isFinite(sim) ? Math.max(0, Math.min(1, sim > 1 ? sim / 100 : sim)) : 0.55;
+      return { risk: simNormalized, simulated: true, note: msg };
     }
     throw new Error(msg);
   }
 
-  // Build AK-compatible payload
-  const payloadToSend = buildAkCompatiblePayload(uwc);
-
-  if (DEBUG_AK_LOG) {
-    try {
-      console.debug('[inferenceClient] POST ->', AK_URL, 'payload keys:', Object.keys(payloadToSend));
-      // log visionTelemetry keys and values summary
-      console.debug('[inferenceClient] visionTelemetry summary ->', {
-        isCompliant: payloadToSend.visionTelemetry.isCompliant,
-        ppeCompliant: payloadToSend.visionTelemetry.ppeCompliant,
-        complianceScore: payloadToSend.visionTelemetry.complianceScore,
-        ppe: payloadToSend.visionTelemetry.ppe
-      });
-    } catch (e) {}
-  }
-
+  const payload = uwc;
   let lastErr = null;
+
   for (let attempt = 1; attempt <= AK_RETRIES + 1; attempt++) {
     try {
-      const resp = await axios.post(AK_URL, payloadToSend, {
+      if (DEBUG_AK_LOG) console.debug('[inferenceClient] POST ->', AK_URL, 'payload keys:', Object.keys(payload));
+      const resp = await axios.post(AK_URL, payload, {
         timeout: AK_TIMEOUT_MS,
         headers: { 'Content-Type': 'application/json' },
         validateStatus: null
@@ -166,9 +151,9 @@ export async function getRiskScore(uwc) {
       if (DEBUG_AK_LOG) console.debug('[inferenceClient] AK responded status', resp.status);
 
       if (resp.status < 200 || resp.status >= 300) {
-        const bodyText = (typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data)).slice(0, 4000);
+        const bodyText = (typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data)).slice(0, 2000);
         console.warn('[inferenceClient] AK responded not ok', resp.status);
-        if (DEBUG_AK_LOG) console.warn('[inferenceClient] AK response body (truncated):', bodyText);
+        if (DEBUG_AK_LOG) console.warn('[inferenceClient] AK response body:', bodyText);
         throw new Error(`AK responded ${resp.status}`);
       }
 
@@ -181,9 +166,25 @@ export async function getRiskScore(uwc) {
         throw new Error('AK returned non-JSON response');
       }
 
+      // extract numeric risk from body (this function exists above in the file)
       const body = resp.data;
-      const risk = extractRiskFromBody(body);
-      if (DEBUG_AK_LOG) console.debug('[inferenceClient] AK returned risk:', risk);
+      let riskRaw = extractRiskFromBody(body); // may throw if not numeric or unexpected
+      let risk = Number(riskRaw);
+
+      if (!Number.isFinite(risk)) {
+        throw new Error('non-finite numeric risk from AK');
+      }
+
+      // NORMALIZE: if AK returns 1..100 scale, convert to 0..1
+      if (risk > 1) {
+        if (DEBUG_AK_LOG) console.debug('[inferenceClient] AK returned risk >1, normalizing by /100');
+        risk = risk / 100.0;
+      }
+
+      // clamp to [0,1]
+      risk = Math.max(0, Math.min(1, risk));
+
+      if (DEBUG_AK_LOG) console.debug('[inferenceClient] AK returned risk (normalized 0..1):', risk);
       return { risk, simulated: false };
     } catch (err) {
       lastErr = err;
@@ -197,13 +198,20 @@ export async function getRiskScore(uwc) {
       console.error('[inferenceClient] all attempts failed:', lastErr?.message || lastErr);
       if (SIMULATE_ON_ERROR) {
         console.warn('[inferenceClient] returning simulated risk due to AK failure:', SIMULATED_RISK);
-        return { risk: SIMULATED_RISK, simulated: true, error: lastErr?.message || String(lastErr) };
+        const sim = Number(SIMULATED_RISK);
+        const simNormalized = Number.isFinite(sim) ? Math.max(0, Math.min(1, sim > 1 ? sim / 100 : sim)) : 0.55;
+        return { risk: simNormalized, simulated: true, error: lastErr?.message || String(lastErr) };
       }
       throw lastErr;
     }
   }
 
-  if (SIMULATE_ON_ERROR) return { risk: SIMULATED_RISK, simulated: true };
+  // fallback (shouldn't be reached)
+  if (SIMULATE_ON_ERROR) {
+    const sim = Number(SIMULATED_RISK);
+    const simNormalized = Number.isFinite(sim) ? Math.max(0, Math.min(1, sim > 1 ? sim / 100 : sim)) : 0.55;
+    return { risk: simNormalized, simulated: true };
+  }
   throw new Error('inferenceClient unexpected flow');
 }
 

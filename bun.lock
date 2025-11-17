@@ -16,7 +16,7 @@
         "ngrok": "^5.0.0-beta.2",
         "node-fetch": "^3.3.2",
         "uuid": "^13.0.0",
-        "ws": "^8.13.0",
+        "ws": "^8.18.3",
       },
       "devDependencies": {
         "nodemon": "^2.0.22",
