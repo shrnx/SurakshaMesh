@@ -3,12 +3,11 @@
 import mongoose from "mongoose";
 
 const logSchema = new mongoose.Schema({
-  eventId: { type: String, required: true, index: true },
+  eventId: String,
   eventType: String,
   payload: Object,
   signature: String,
-  signer: String,
-  ts: { type: Date, default: Date.now }
-});
+  signer: String
+}, { timestamps: true });
 
 export const Logs = mongoose.model("Logs", logSchema);

@@ -4,14 +4,13 @@ import mongoose from "mongoose";
 
 const uwcSchema = new mongoose.Schema({
   workerId: { type: String, required: true, index: true },
-  ts: { type: Date, default: Date.now },
-  location: Object,
-  vitals: Object,
-  ppe: Object,
-  scada: Object,
-  vision: Object,
+  timestamp: { type: String },
+  badgeTelemetry: Object,
+  visionTelemetry: Object,
+  scadaContext: Object,
+  workerProfile: Object,
   riskScore: Number,
   modelVersion: String
 }, { timestamps: true });
 
-export const UWC = mongoose.model("UWC", uwcSchema)
+export default mongoose.models.UWC || mongoose.model('UWC', uwcSchema);

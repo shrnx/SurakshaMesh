@@ -1,10 +1,16 @@
-import mongoose from "mongoose";
+// src/models/Worker.model.js
+import mongoose from 'mongoose';
 
-const workerSchema = new mongoose.Schema({
-  workerId: { type: String, unique: true, required: true },
+const WorkerSchema = new mongoose.Schema({
+  workerId: { type: String, unique: true, required: true, index: true },
   name: String,
+  age: Number,
+  shift: String,
   role: String,
+  experience: Number,
+  pastIncidents: { type: Number, default: 0 },
   meta: Object
 }, { timestamps: true });
 
-export const Worker = mongoose.model("Worker", workerSchema)
+// safe default export (prevents OverwriteModelError when files hot-reload)
+export default mongoose.models.Worker || mongoose.model('Worker', WorkerSchema);

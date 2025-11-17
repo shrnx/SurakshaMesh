@@ -1,48 +1,19 @@
 // src/controllers/telemetry.controller.js
 import { v4 as uuidv4 } from 'uuid';
 import { Logs } from '../models/Logs.model.js';
+import ScadaSchema from "../models/scada.model.js";
 import { signPayload } from '../services/signing.js';
-import { pushTelemetry, pushVision, pushScada } from '../engine/fusionEngine.js';
+import { pushTelemetry, pushVision } from '../engine/fusionEngine.js';
 
-/**
- * Helpers to normalize incoming payloads to the internal expected shape:
- * Internal badge shape we expect in buffers:
- * {
- *   workerId: 'EMP-104',
- *   vitals: { hr, spo2, skinTemp, ... },
- *   location: { x, y, zone? },
- *   fallDetected: bool,
- *   sosActive: bool,
- *   raw: { ...original payload... }
- * }
- *
- * Internal vision shape:
- * {
- *   cameraId,
- *   workerId,            // optional
- *   ppe: { helmet:bool, vest:bool, gloves:bool, boots:bool, goggles:bool }
- *   isCompliant: bool,
- *   missingItems: [],
- *   allFoundItems: [],
- *   raw: { ...original payload... }
- * }
- */
-
+/* Normalizers (badge & vision) — unchanged from your previous file */
 function normalizeBadgePayload(incoming) {
-  // If incoming already matches old format (has location.vitals), handle that too.
   const payload = {};
-
-  // workerId may be top-level or named id
   payload.workerId = incoming.workerId || incoming.id || incoming.empId || incoming.worker || null;
-
-  // vitals may be in several forms: top-level hr/spo2/skinTemp or nested in 'vitals'
   payload.vitals = incoming.vitals || {
     hr: incoming.hr ?? null,
     spo2: incoming.spo2 ?? null,
     skinTemp: incoming.skinTemp ?? incoming.temp ?? null
   };
-
-  // location may be provided as {x,y} or {location:{x,y}} or {zone:...}
   if (incoming.location) {
     payload.location = incoming.location;
   } else {
@@ -51,7 +22,6 @@ function normalizeBadgePayload(incoming) {
     if (incoming.y !== undefined) payload.location.y = incoming.y;
     if (incoming.zone) payload.location.zone = incoming.zone;
   }
-
   payload.fallDetected = incoming.fallDetected ?? incoming.fall ?? false;
   payload.sosActive = incoming.sosActive ?? incoming.sos ?? false;
   payload.raw = incoming;
@@ -62,8 +32,6 @@ function normalizeVisionPayload(incoming) {
   const p = {};
   p.cameraId = incoming.cameraId || incoming.camId || incoming.camera || null;
   p.workerId = incoming.workerId || incoming.matchedWorkerId || incoming.empId || null;
-
-  // if incoming already has ppe object, use it; else try to infer from isCompliant/missingItems/allFoundItems
   if (incoming.ppe) {
     p.ppe = {
       helmet: incoming.ppe.helmet ?? null,
@@ -73,7 +41,6 @@ function normalizeVisionPayload(incoming) {
       goggles: incoming.ppe.goggles ?? null
     };
   } else if (incoming.isCompliant !== undefined || incoming.missingItems) {
-    // convert missingItems -> ppe booleans (best-effort)
     const missing = incoming.missingItems || [];
     p.ppe = {
       helmet: missing.indexOf('hardhat') === -1 && missing.indexOf('helmet') === -1,
@@ -83,10 +50,8 @@ function normalizeVisionPayload(incoming) {
       goggles: missing.indexOf('goggles') === -1
     };
   } else {
-    // fallback: keep ppe nulls
     p.ppe = { helmet: null, vest: null, gloves: null, boots: null, goggles: null };
   }
-
   p.isCompliant = incoming.isCompliant ?? null;
   p.missingItems = incoming.missingItems ?? [];
   p.allFoundItems = incoming.allFoundItems ?? [];
@@ -96,14 +61,11 @@ function normalizeVisionPayload(incoming) {
 
 /* --- handlers --- */
 
-async function handleBadge(req, res) {
+export async function handleBadge(req, res) {
   const incoming = req.body;
-  // normalize
   const payload = normalizeBadgePayload(incoming);
 
-  if (!payload.workerId) {
-    return res.status(400).json({ error: 'workerId required in payload (field may be workerId/empId/id)' });
-  }
+  if (!payload.workerId) return res.status(400).json({ error: 'workerId required in payload' });
 
   const eventId = uuidv4();
   const sign = signPayload(payload);
@@ -127,14 +89,11 @@ async function handleBadge(req, res) {
   }
 }
 
-async function handleVision(req, res) {
+export async function handleVision(req, res) {
   const incoming = req.body;
   const payload = normalizeVisionPayload(incoming);
 
-  if (!payload.cameraId && !payload.workerId) {
-    // allow camera-only events (no worker) but require a cameraId
-    return res.status(400).json({ error: 'cameraId or workerId required' });
-  }
+  if (!payload.cameraId && !payload.workerId) return res.status(400).json({ error: 'cameraId or workerId required' });
 
   const eventId = uuidv4();
   const sign = signPayload(payload);
@@ -148,12 +107,8 @@ async function handleVision(req, res) {
       signer: sign.signer
     });
 
-    // If vision maps to a worker, push directly to worker buffer; otherwise broadcast camera event via pushVision
-    if (payload.workerId) {
-      await pushVision(payload.cameraId, payload); // pushVision handles payload.workerId mapping
-    } else {
-      await pushVision(payload.cameraId, payload);
-    }
+    // push to fusion (pushVision maps workerId internally)
+    await pushVision(payload.cameraId, payload);
 
     return res.status(202).json({ status: 'accepted', eventId });
   } catch (err) {
@@ -162,14 +117,30 @@ async function handleVision(req, res) {
   }
 }
 
-async function handleScada(req, res) {
-  const payload = req.body;
-  if (!payload || !payload.zone) return res.status(400).json({ error: 'zone required' });
+/**
+ * handleScada:
+ * - Persist incoming SCADA to a scada collection for audit/history.
+ * - Also create signed log entry for audit.
+ * - Do NOT push into fusion buffers (fusion uses internal SCADA mock).
+ */
+export async function handleScada(req, res) {
+  const incoming = req.body;
+  if (!incoming || (!incoming.zone && incoming.zone !== 0)) return res.status(400).json({ error: 'zone required' });
+
+  const payload = {
+    zone: incoming.zone,
+    data: incoming, // store full payload under data
+    ts: new Date().toISOString()
+  };
 
   const eventId = uuidv4();
   const sign = signPayload(payload);
 
   try {
+    // store in scada collection
+    await ScadaSchema.create(payload);
+
+    // also store as signed log for audit
     await Logs.create({
       eventId,
       eventType: 'scada',
@@ -178,13 +149,10 @@ async function handleScada(req, res) {
       signer: sign.signer
     });
 
-    await pushScada(payload.zone, payload);
-
+    // we do NOT push into fusion; fusion generates its own mock scada
     return res.status(202).json({ status: 'accepted', eventId });
   } catch (err) {
     console.error('handleScada error', err);
     return res.status(500).json({ error: 'internal server error' });
   }
 }
-
-export { handleBadge, handleVision, handleScada };

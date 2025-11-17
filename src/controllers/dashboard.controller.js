@@ -1,6 +1,6 @@
-import { UWC } from '../models/UWC.model.js';
+import UWC from '../models/UWC.model.js';
 import { Incident } from '../models/Incident.model.js';
-import { Worker } from '../models/workers.model.js';
+import Worker from '../models/workers.model.js';
 
 /**
  * Return all workers with latest risk (optional pagination)
