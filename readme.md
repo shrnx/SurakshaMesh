@@ -214,11 +214,11 @@ ws.onmessage = (msg) => {
 
 ---
 
-# 📡 Live Mock Sensor Streaming (SSE)
+# 📡 Live Sensor Streaming (SSE)
 
-### Start mock stream:
+### Start stream:
 ```
-GET /debug/mock/stream
+GET /debug/stream
 ```
 
 ### Example stream output:
@@ -306,18 +306,6 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
 
 ### Frontend:
 - Deploy Next.js on Vercel or Cloudflare Pages
-
----
-
-# 📷 Screenshots (add your images)
-
-```
-assets/
- ├─ dashboard.png
- ├─ worker-table.png
- ├─ incidents.png
- ├─ architecture.png
-```
 
 ---
 
