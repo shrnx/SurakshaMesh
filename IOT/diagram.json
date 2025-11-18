@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "author": "SurakshaMesh X Team",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-led",
+      "id": "led_green",
+      "top": -76.8,
+      "left": 134.4,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_yellow",
+      "top": -38.4,
+      "left": 134.4,
+      "attrs": { "color": "yellow" }
+    },
+    { "type": "wokwi-led", "id": "led_red", "top": 0, "left": 134.4, "attrs": { "color": "red" } },
+    {
+      "type": "wokwi-led",
+      "id": "led_blink",
+      "top": 38.4,
+      "left": 134.4,
+      "attrs": { "color": "red" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": -67.2,
+      "left": 163.2,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": -28.8,
+      "left": 163.2,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r3",
+      "top": 9.6,
+      "left": 163.2,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r4",
+      "top": 51.95,
+      "left": 163.2,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_sos",
+      "top": 111.8,
+      "left": 96,
+      "attrs": { "color": "red", "label": "SOS" }
+    },
+    { "type": "wokwi-buzzer", "id": "buzzer", "top": 86.4, "left": -57.6, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX0", "$serialMonitor:TX", "", [] ],
+    [ "led_green:A", "r1:1", "green", [] ],
+    [ "r1:2", "esp:D2", "green", [] ],
+    [ "led_green:C", "esp:GND.1", "black", [] ],
+    [ "led_yellow:A", "r2:1", "gold", [] ],
+    [ "r2:2", "esp:D4", "gold", [] ],
+    [ "led_yellow:C", "esp:GND.1", "black", [] ],
+    [ "led_red:A", "r3:1", "red", [] ],
+    [ "r3:2", "esp:D5", "red", [] ],
+    [ "led_red:C", "esp:GND.1", "black", [] ],
+    [ "led_blink:A", "r4:1", "red", [] ],
+    [ "r4:2", "esp:D18", "red", [] ],
+    [ "led_blink:C", "esp:GND.1", "black", [] ],
+    [ "btn_sos:1.l", "esp:D21", "blue", [] ],
+    [ "btn_sos:2.l", "esp:GND.2", "black", [] ],
+    [ "buzzer:1", "esp:D19", "orange", [] ],
+    [ "buzzer:2", "esp:GND.2", "black", [] ]
+  ],
+  "dependencies": {}
+}
