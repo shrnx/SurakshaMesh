@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SurakshaMesh X Badge Simulator</title>
+    <style>
+        /* --- CSS STYLES --- */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        .header {
+            text-align: center; margin-bottom: 30px; padding: 20px;
+            background: rgba(255,255,255,0.05); border-radius: 15px; border: 2px solid #00ffff;
+        }
+        
+        .header h1 { color: #00ffff; font-size: 2em; margin-bottom: 10px; }
+        
+        .status {
+            display: inline-block; padding: 8px 20px; background: #555; color: #fff;
+            border-radius: 20px; font-weight: bold; transition: background 0.3s;
+        }
+        
+        .badge-container {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px; margin-bottom: 30px;
+        }
+        
+        .badge-card {
+            background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+            border: 2px solid rgba(255,255,255,0.2); border-radius: 15px;
+            padding: 20px; transition: all 0.3s;
+        }
+        
+        .badge-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,255,255,0.3); }
+        
+        .badge-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .worker-id { font-size: 1.2em; font-weight: bold; color: #00ffff; }
+        
+        .risk-badge { padding: 5px 15px; border-radius: 20px; font-size: 0.9em; font-weight: bold; }
+        .risk-low { background: #00ff00; color: #000; }
+        .risk-medium { background: #ffaa00; color: #000; }
+        .risk-high { background: #ff4444; color: #fff; }
+        .risk-critical { background: #ff0000; color: #fff; animation: blink 1s infinite; }
+        
+        @keyframes blink { 0%, 50%, 100% { opacity: 1; } 25%, 75% { opacity: 0.3; } }
+        
+        .vitals { display: grid; gap: 10px; }
+        .vital-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; }
+        .vital-label { color: #aaa; font-size: 0.9em; }
+        .vital-value { font-size: 1.1em; font-weight: bold; }
+        
+        .controls { background: rgba(255,255,255,0.1); padding: 20px; border-radius: 15px; margin-bottom: 20px; }
+        .btn { padding: 12px 25px; margin: 5px; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; cursor: pointer; transition: all 0.3s; }
+        .btn-emergency { background: #ff0000; color: white; }
+        .btn-stress { background: #ffaa00; color: #000; }
+        .btn-normal { background: #00ff00; color: #000; }
+        .btn:hover { transform: scale(1.05); }
+        
+        .log { background: rgba(0,0,0,0.5); padding: 15px; border-radius: 10px; max-height: 150px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85em; }
+        .log-entry { margin: 5px 0; padding-left: 10px; border-left: 3px solid #00ffff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏭 SurakshaMesh X Simulator</h1>
+            <p>Smart Badge Data Generator (Connected to AI)</p>
+            <div style="margin-top: 15px;">
+                <span class="status" id="status">● INITIALIZING...</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h3 style="margin-bottom: 15px;">🎮 Scenario Controls</h3>
+            <button class="btn btn-normal" onclick="setScenario('normal')">✅ Normal</button>
+            <button class="btn btn-stress" onclick="setScenario('stress')">⚠️ High Stress</button>
+            <button class="btn btn-emergency" onclick="setScenario('emergency')">🚨 EMERGENCY</button>
+        </div>
+
+        <div class="badge-container" id="badges">
+            </div>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const GURU_BACKEND = 'http://localhost:3000';
+        const BRAIN_WS = 'ws://localhost:8002/ws/brain'; // Pointing to your Python RAM Brain
+
+        let socket = null;
+        let currentScenario = 'normal';
+        let isBrainConnected = false;
+
+        // Workers State
+        const workers = [
+            { id: 'WKR-2401-M', name: 'Rajesh Kumar', zone: 'Furnace-A' },
+            { id: 'WKR-2402-M', name: 'Amit Singh', zone: 'Assembly-B' },
+            { id: 'WKR-2406-F', name: 'Priya Sharma', zone: 'Assembly-A' }
+        ];
+
+        let workerStates = {};
+        let aiInsights = {};
+
+        // Initialization
+        workers.forEach(w => {
+            workerStates[w.id] = {
+                hr: 72, spo2: 99, skinTemp: 36.5, sosActive: false, localRisk: 15
+            };
+            aiInsights[w.id] = { risk: 15, action: "Syncing..." };
+        });
+
+        // --- LOGGING ---
+        function log(msg) {
+            const box = document.getElementById('log');
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            box.prepend(div);
+            if(box.children.length > 20) box.lastChild.remove();
+        }
+
+        // --- WEBSOCKET CONNECTION ---
+        function connectBrain() {
+            try {
+                socket = new WebSocket(BRAIN_WS);
+            } catch(e) {
+                log("❌ WebSocket Init Failed");
+                return;
+            }
+
+            socket.onopen = () => {
+                log("✅ Connected to AI Brain");
+                const s = document.getElementById('status');
+                s.innerText = "● BRAIN ONLINE";
+                s.style.background = "#00ff88";
+                isBrainConnected = true;
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    // 1. Handle Bulk Update
+                    if (data.type === 'full_update') {
+                        data.workers.forEach(sw => {
+                            if (aiInsights[sw.id]) {
+                                aiInsights[sw.id].risk = sw.risk;
+                                if(sw.insights && sw.insights.prediction) {
+                                    aiInsights[sw.id].action = sw.insights.prediction.recommendation;
+                                }
+                            }
+                        });
+                        renderBadges(); // Update UI immediately
+                    }
+
+                    // 2. Handle Specific Alert
+                    if (data.type === 'incident_recorded') {
+                        const wId = data.worker_id;
+                        if (aiInsights[wId]) {
+                            aiInsights[wId].risk = data.risk;
+                            aiInsights[wId].action = data.actions ? data.actions[0] : "ALERT!";
+                            log(`🚨 ALERT: ${wId} Risk ${data.risk}%`);
+                            renderBadges();
+                        }
+                    }
+                } catch (e) { console.error(e); }
+            };
+
+            socket.onclose = () => {
+                log("⚠️ Brain Offline. Using Local Mode.");
+                const s = document.getElementById('status');
+                s.innerText = "● LOCAL MODE";
+                s.style.background = "#ffaa00";
+                isBrainConnected = false;
+                setTimeout(connectBrain, 3000);
+            };
+
+            socket.onerror = (err) => {
+                console.log("WS Error", err);
+            };
+        }
+
+        // --- SIMULATION LOGIC ---
+        function setScenario(scenario) {
+            currentScenario = scenario;
+            log(`Switched to: ${scenario.toUpperCase()}`);
+            
+            // Immediate update for responsiveness
+            workers.forEach(w => generateSimulatedVitals(w.id));
+            renderBadges();
+        }
+
+        function generateSimulatedVitals(workerId) {
+            const state = workerStates[workerId];
+            
+            if (currentScenario === 'normal') {
+                state.hr = 70 + Math.random() * 10;
+                state.spo2 = 97 + Math.random() * 2;
+                state.skinTemp = 36.5;
+                state.localRisk = 15;
+                state.sosActive = false;
+            } else if (currentScenario === 'stress') {
+                state.hr = 110 + Math.random() * 15;
+                state.spo2 = 94 + Math.random() * 2;
+                state.skinTemp = 37.8;
+                state.localRisk = 65;
+                state.sosActive = false;
+            } else if (currentScenario === 'emergency') {
+                state.hr = 150 + Math.random() * 20;
+                state.spo2 = 88 + Math.random() * 4;
+                state.skinTemp = 38.5;
+                state.localRisk = 95;
+                state.sosActive = true;
+            }
+
+            return {
+                workerId: workerId,
+                hr: Math.floor(state.hr),
+                spo2: Math.floor(state.spo2),
+                skinTemp: state.skinTemp,
+                sosActive: state.sosActive
+            };
+        }
+
+        // --- LOOP ---
+        function gameLoop() {
+            workers.forEach(w => {
+                const packet = generateSimulatedVitals(w.id);
+                
+                // 1. Send to Guru (Fire & Forget)
+                fetch(`${GURU_BACKEND}/telemetry/badge`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(packet)
+                }).catch(e => {}); // Guru offline is fine
+
+                // 2. Send to Brain (If Connected + High Risk)
+                if (isBrainConnected && socket.readyState === WebSocket.OPEN) {
+                    if (currentScenario !== 'normal') {
+                        socket.send(JSON.stringify({
+                            type: 'simulate_incident',
+                            worker_id: w.id,
+                            risk: workerStates[w.id].localRisk,
+                            zone: w.zone
+                        }));
+                    }
+                }
+            });
+            renderBadges();
+        }
+
+        // --- RENDER UI ---
+        function renderBadges() {
+            const container = document.getElementById('badges');
+            if(!container) return;
+            
+            container.innerHTML = '';
+
+            workers.forEach(w => {
+                const state = workerStates[w.id];
+                // Safety check for AI data
+                const ai = aiInsights[w.id] || { risk: state.localRisk, action: "N/A" };
+                
+                const displayRisk = isBrainConnected ? ai.risk : state.localRisk;
+                const displayAction = isBrainConnected ? ai.action : "Simulating...";
+                
+                const riskClass = getRiskClass(displayRisk);
+                const color = getRiskColor(riskClass);
+
+                const html = `
+                    <div class="badge-card" style="border-left: 5px solid ${color}">
+                        <div class="badge-header">
+                            <div class="worker-id">${w.id}</div>
+                            <div class="risk-badge risk-${riskClass}">
+                                ${displayRisk}% Risk
+                            </div>
+                        </div>
+                        <div class="vitals">
+                            <div class="vital-row">
+                                <span class="vital-label">❤️ Heart Rate</span>
+                                <span class="vital-value">${Math.floor(state.hr)} bpm</span>
+                            </div>
+                            <div class="vital-row">
+                                <span class="vital-label">💨 SpO2</span>
+                                <span class="vital-value">${Math.floor(state.spo2)}%</span>
+                            </div>
+                             <div class="vital-row">
+                                <span class="vital-label">🧠 Action</span>
+                                <span class="vital-value" style="font-size:0.9em; color:#00ffff;">${displayAction}</span>
+                            </div>
+                            ${state.sosActive ? '<div class="vital-row" style="background:#ff0000; justify-content:center;"><b>🚨 SOS ACTIVE</b></div>' : ''}
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += html;
+            });
+        }
+
+        function getRiskClass(r) {
+            if (r < 30) return 'low';
+            if (r < 60) return 'medium';
+            if (r < 80) return 'high';
+            return 'critical';
+        }
+        
+        function getRiskColor(c) {
+            if(c === 'low') return '#00ff00';
+            if(c === 'medium') return '#ffaa00';
+            if(c === 'high') return '#ff4444';
+            return '#ff0000';
+        }
+
+        // --- START ---
+        connectBrain();
+        setInterval(gameLoop, 2000);
+
+    </script>
+</body>
+</html>

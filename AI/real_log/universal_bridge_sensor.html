@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SurakshaMesh X - Connected Monitor</title>
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script>
+    <style>
+        /* --- SAME BEAUTIFUL CSS AS BEFORE --- */
+        :root { --neon-green: #00ff88; --neon-red: #ff2a2a; --neon-blue: #00f3ff; --neon-orange: #ffaa00; --bg-dark: #050508; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', 'Roboto', monospace; }
+        body { background: var(--bg-dark); color: #eee; padding: 20px; height: 100vh; overflow: hidden; display: flex; gap: 20px; }
+        
+        .sidebar { width: 320px; display: flex; flex-direction: column; gap: 15px; }
+        .main-view { flex: 1; display: flex; flex-direction: column; gap: 20px; }
+        .bottom-panel { height: 280px; background: #0a0a0e; border: 1px solid #333; border-radius: 12px; padding: 15px; display: flex; flex-direction: column; }
+        .card { background: rgba(255,255,255,0.03); border: 1px solid #333; border-radius: 10px; padding: 15px; }
+        .card h3 { color: var(--neon-blue); font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        
+        .sensor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .sensor-box { background: #000; padding: 10px; border-radius: 6px; border-left: 3px solid #555; transition: 0.3s; }
+        .sensor-label { font-size: 0.7em; color: #888; display: block; text-transform: uppercase; }
+        .sensor-val { font-size: 1.3em; font-weight: bold; color: #fff; }
+        .sensor-unit { font-size: 0.7em; color: #666; margin-left: 2px; }
+
+        .risk-container { text-align: center; padding: 20px; background: radial-gradient(circle, rgba(0,255,136,0.1) 0%, rgba(0,0,0,0) 70%); border: 1px solid #333; border-radius: 12px; margin-bottom: 10px; transition: 0.5s; }
+        .risk-value { font-size: 3.5em; font-weight: 900; color: var(--neon-green); text-shadow: 0 0 20px rgba(0,255,136,0.2); }
+        .risk-label { font-size: 1em; color: #aaa; text-transform: uppercase; letter-spacing: 2px; }
+
+        .log-feed { flex: 1; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.8em; padding-right: 5px; }
+        .log-entry { margin-bottom: 6px; padding: 4px 6px; border-bottom: 1px solid #222; display: flex; gap: 10px; align-items: center; }
+        .log-time { color: #555; min-width: 60px; }
+        .log-brain { color: var(--neon-blue); font-weight: bold; }
+        .log-alert { color: var(--neon-red); font-weight: bold; background: rgba(255,0,0,0.1); padding: 2px 5px; border-radius: 3px; }
+        .log-recv { color: var(--neon-orange); font-weight: bold; }
+
+        .controls { display: flex; flex-direction: column; gap: 8px; }
+        button { padding: 12px; background: #1a1a20; border: 1px solid #444; color: #fff; border-radius: 6px; cursor: pointer; transition: 0.2s; font-weight: bold; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+        button:hover { background: #2a2a30; border-color: var(--neon-blue); transform: translateX(5px); }
+
+        .twin-container { flex: 1; background: #000; border-radius: 12px; border: 1px solid var(--neon-blue); position: relative; overflow: hidden; }
+        .overlay { position: absolute; top: 15px; left: 15px; background: rgba(0,0,0,0.8); padding: 8px 15px; border-left: 4px solid var(--neon-green); border-radius: 4px; font-weight: bold; pointer-events: none; z-index: 10; transition: 0.3s; }
+        
+        .pred-box { background: rgba(0,243,255,0.05); padding: 10px; border-radius: 8px; border: 1px solid var(--neon-blue); margin-top: 10px; }
+        .pred-label { font-size: 0.7em; color: var(--neon-blue); letter-spacing: 1px; }
+        .pred-text { font-size: 0.9em; color: #fff; margin-top: 3px; font-weight: bold; }
+
+        @keyframes flashRed { 0% { border-color: #333; } 50% { border-color: var(--neon-red); box-shadow: inset 0 0 50px rgba(255,0,0,0.2); } 100% { border-color: #333; } }
+        .critical-state { animation: flashRed 0.5s infinite; }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="card">
+            <h3>⚡ SCENARIO INJECTION</h3>
+            <div class="controls">
+                <button onclick="setMode('normal')"><span>✅ NORMAL STATE</span></button>
+                <button onclick="setMode('gas')"><span>☠️ GAS LEAK (CO)</span></button>
+                <button onclick="triggerSeismic()"><span>📉 SEISMIC TREMOR</span></button>
+                <button onclick="triggerImpact()"><span>💥 MAN DOWN</span></button>
+            </div>
+        </div>
+        
+        <div class="card" style="flex:1; display: flex; flex-direction: column;">
+            <h3>📡 NETWORK TRAFFIC</h3>
+            <div class="log-feed" id="log-box">
+                </div>
+        </div>
+    </div>
+
+    <div class="main-view">
+        
+        <div style="display: flex; gap: 20px; height: 350px;">
+            
+            <div class="twin-container" id="twin-box">
+                <div class="overlay" id="twin-status">
+                    <div style="font-size:0.8em; color:#aaa">LIVE TWIN</div>
+                    <div id="twin-msg" style="color:#fff; font-size:1.1em">ZONE A: STABLE</div>
+                </div>
+                <model-viewer 
+                    src="tunnel.glb" 
+                    camera-controls auto-rotate shadow-intensity="1" 
+                    camera-orbit="45deg 55deg 2.5m" 
+                    style="width: 100%; height: 100%; background: #050508;">
+                </model-viewer>
+            </div>
+
+            <div style="width: 280px; display: flex; flex-direction: column;">
+                <div class="risk-container" id="risk-box">
+                    <div class="risk-label">AI RISK SCORE</div>
+                    <div class="risk-value" id="risk-val">0%</div>
+                    <div style="color: var(--neon-green); font-weight: bold;" id="risk-text">CALCULATING</div>
+                </div>
+
+                <div class="card" style="flex:1;">
+                    <h3>🧠 BRAIN INFERENCE</h3>
+                    <div class="pred-box">
+                        <div class="pred-label">PREDICTED HAZARD</div>
+                        <div class="pred-text" id="ai-pred">Waiting for Server...</div>
+                    </div>
+                    <div style="margin-top:10px; font-size:0.8em; color:#555;">
+                        MODEL: <span style="color:var(--neon-blue)">RandomForest v2.1</span><br>
+                        LATENCY: <span id="latency">--</span> ms
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bottom-panel">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;">
+                <h3 style="color: #fff; margin: 0;">📊 UNIVERSAL SENSOR ARRAY</h3>
+                <span id="conn-status" style="color: #555; font-size: 0.8em; font-weight:bold;">● OFFLINE (USING LOCAL AI)</span>
+            </div>
+            
+            <div class="sensor-grid" style="grid-template-columns: repeat(4, 1fr); gap: 15px; height: 100%;">
+                <div class="sensor-box" id="box-hr"><span class="sensor-label">HEART RATE</span><div style="margin-top:5px"><span class="sensor-val" id="val-hr">72</span> <span class="sensor-unit">BPM</span></div></div>
+                <div class="sensor-box" id="box-spo2"><span class="sensor-label">OXYGEN</span><div style="margin-top:5px"><span class="sensor-val" id="val-spo2">98</span> <span class="sensor-unit">%</span></div></div>
+                <div class="sensor-box" id="box-co"><span class="sensor-label">TOXIC GAS</span><div style="margin-top:5px"><span class="sensor-val" id="val-co">12</span> <span class="sensor-unit">PPM</span></div></div>
+                <div class="sensor-box" id="box-vib"><span class="sensor-label">SEISMIC</span><div style="margin-top:5px"><span class="sensor-val" id="val-vib">0.02</span> <span class="sensor-unit">g</span></div></div>
+                <div class="sensor-box" id="box-temp"><span class="sensor-label">TEMP</span><div style="margin-top:5px"><span class="sensor-val" id="val-temp">36.5</span> <span class="sensor-unit">°C</span></div></div>
+                <div class="sensor-box" id="box-acc"><span class="sensor-label">IMPACT</span><div style="margin-top:5px"><span class="sensor-val" id="val-acc">1.0</span> <span class="sensor-unit">G</span></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const SERVER_URL = "ws://localhost:8002/ws/brain";
+        let socket = null;
+        let isConnected = false;
+
+        // --- SENSOR STATE ---
+        let mode = 'normal';
+        let seismicActive = false;
+        let impactActive = false;
+        let sensors = { hr: 72, spo2: 98, temp: 36.5, acc: 1.0, co: 12, noise: 65, vib: 0.02 };
+
+        // --- 1. WEBSOCKET CONNECTION ---
+        function connect() {
+            socket = new WebSocket(SERVER_URL);
+            
+            socket.onopen = () => {
+                isConnected = true;
+                document.getElementById('conn-status').innerText = "● CONNECTED TO PYTHON BRAIN";
+                document.getElementById('conn-status').style.color = "var(--neon-green)";
+                log("Handshake Successful", "brain");
+            };
+
+            socket.onmessage = (event) => {
+                // RECEIVE PREDICTION FROM PYTHON
+                const data = JSON.parse(event.data);
+                if (data.type === 'ai_prediction') {
+                    updateAI(data.risk, data.message);
+                    log(`Risk: ${data.risk}% (${data.message})`, "recv");
+                }
+            };
+
+            socket.onclose = () => {
+                isConnected = false;
+                document.getElementById('conn-status').innerText = "● OFFLINE (LOCAL MODE)";
+                document.getElementById('conn-status').style.color = "var(--neon-orange)";
+                setTimeout(connect, 2000); // Retry
+            };
+        }
+
+        // --- 2. SEND DATA ---
+        function sendTelemetry() {
+            if (isConnected) {
+                const packet = {
+                    type: "telemetry",
+                    hr: Math.floor(sensors.hr),
+                    spo2: Math.floor(sensors.spo2),
+                    co: Math.floor(sensors.co),
+                    vib: sensors.vib,
+                    acc: sensors.acc
+                };
+                socket.send(JSON.stringify(packet));
+                
+                // Visual "Heartbeat" in log (every 5th packet to reduce noise)
+                if(Math.random() > 0.8) log(`Sending Telemetry...`, "brain");
+            } else {
+                // FALLBACK: Run Local Logic if Server is Dead
+                analyzeRiskLocal(); 
+            }
+        }
+
+        // --- 3. SIMULATION LOOP ---
+        setInterval(() => {
+            simulateSensors();
+            updateUI();
+            sendTelemetry(); // Sends to Python
+        }, 500); // Fast updates
+
+        function simulateSensors() {
+            // Drift
+            sensors.hr += (Math.random() - 0.5) * 2;
+            sensors.co += (Math.random() - 0.5) * 1;
+            sensors.vib = Math.max(0.01, sensors.vib + (Math.random() - 0.5) * 0.01);
+
+            // Mode Logic
+            if (mode === 'gas') { sensors.co += 5; sensors.hr += 1; }
+            if (mode === 'normal') { 
+                if(sensors.co > 12) sensors.co -= 2;
+                if(sensors.hr > 72) sensors.hr -= 1;
+                if(sensors.vib > 0.02) sensors.vib -= 0.05;
+            }
+
+            // Events
+            if (seismicActive) sensors.vib = (Math.random() * 1.5) + 0.5;
+            if (impactActive) sensors.acc = (Math.random() * 4) + 2.0;
+            else sensors.acc = 1.0 + (Math.random() * 0.05);
+
+            sensors.co = Math.max(0, sensors.co);
+        }
+
+        function analyzeRiskLocal() {
+            // Only used if Python is offline
+            let risk = 10;
+            let msg = "Normal Operations";
+            if (sensors.co > 40) { risk = 90; msg = "Toxic Gas"; }
+            else if (sensors.vib > 0.3) { risk = 95; msg = "Seismic Activity"; }
+            else if (sensors.acc > 2.0) { risk = 99; msg = "Man Down"; }
+            updateAI(risk, msg);
+        }
+
+        function updateAI(risk, msg) {
+            const riskVal = document.getElementById('risk-val');
+            const riskText = document.getElementById('risk-text');
+            const aiPred = document.getElementById('ai-pred');
+            const twinMsg = document.getElementById('twin-msg');
+            const twinStatus = document.getElementById('twin-status');
+
+            riskVal.innerText = risk + "%";
+            aiPred.innerText = msg;
+
+            let color = "var(--neon-green)";
+            if(risk > 50) color = "var(--neon-orange)";
+            if(risk > 80) color = "var(--neon-red)";
+
+            riskVal.style.color = color;
+            riskText.style.color = color;
+            riskText.innerText = risk > 80 ? "CRITICAL" : (risk > 50 ? "WARNING" : "LOW");
+
+            // Twin Updates
+            twinMsg.innerText = risk > 80 ? `⚠️ ${msg}` : "ZONE A: STABLE";
+            twinStatus.style.borderLeftColor = color;
+            
+            // Flash
+            if(risk > 80) document.body.classList.add('critical-state');
+            else document.body.classList.remove('critical-state');
+        }
+
+        function updateUI() {
+            document.getElementById('val-hr').innerText = Math.floor(sensors.hr);
+            document.getElementById('val-spo2').innerText = Math.floor(sensors.spo2);
+            document.getElementById('val-co').innerText = Math.floor(sensors.co);
+            document.getElementById('val-vib').innerText = sensors.vib.toFixed(2);
+            document.getElementById('val-acc').innerText = sensors.acc.toFixed(1);
+
+            colorBox('box-co', sensors.co > 40);
+            colorBox('box-vib', sensors.vib > 0.3);
+            colorBox('box-acc', sensors.acc > 2.0);
+        }
+
+        // --- UTILS ---
+        function setMode(m) { mode = m; log(`Mode: ${m.toUpperCase()}`); }
+        function triggerSeismic() { seismicActive = true; log("Event: Seismic", "alert"); setTimeout(()=>seismicActive=false, 4000); }
+        function triggerImpact() { impactActive = true; log("Event: Impact", "alert"); setTimeout(()=>impactActive=false, 2000); }
+        
+        function log(msg, type='info') {
+            const box = document.getElementById('log-box');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            
+            let content = `<span class="log-time">${time}</span>`;
+            if(type==='brain') content += `<span class="log-brain">📡 TX:</span> ${msg}`;
+            else if(type==='recv') content += `<span class="log-recv">📥 RX:</span> ${msg}`;
+            else if(type==='alert') content += `<span class="log-alert">🚨 ALERT:</span> ${msg}`;
+            else content += `<span>${msg}</span>`;
+            
+            entry.innerHTML = content;
+            box.prepend(entry);
+            if(box.children.length > 20) box.lastChild.remove();
+        }
+
+        function colorBox(id, crit) {
+            document.getElementById(id).style.borderLeftColor = crit ? "red" : "#555";
+            document.getElementById(id).style.background = crit ? "#330000" : "#000";
+        }
+
+        // Start
+        connect();
+    </script>
+</body>
+</html>
